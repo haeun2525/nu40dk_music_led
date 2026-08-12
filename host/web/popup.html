@@ -227,23 +227,28 @@ body.no-serial .leds { display: none; }
 }
 .artist:empty::before { content: "\00a0"; }   /* 비어도 줄 높이는 유지 */
 
-/* ---------- 진행 ---------- */
-.bar {
-    position: relative;
-    height: 0.22rem;
-    margin-top: 0.4rem;
-    border-radius: 0.11rem;
-    background: rgba(255, 255, 255, 0.13);
-    overflow: hidden;
+/* ---------- 파동 ----------
+   보드로 나가는 것과 같은 분석 결과를 화면에서도 본다. 막대는 아래에 붙이고
+   위로 자란다. 좁은 위젯이라 128밴드를 그대로 쓰지 않고 묶어서 줄인다. */
+.wave {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.055rem;
+    height: 1.25rem;
+    margin-top: 0.42rem;
+    opacity: 0.95;
+    transition: opacity 0.4s ease;
 }
-.fill {
-    position: absolute; inset: 0;
-    width: 0%;
-    border-radius: inherit;
-    background: linear-gradient(90deg,
-        color-mix(in srgb, var(--accent) 60%, white) 0%,
+body:not(.playing) .wave { opacity: 0.25; }
+
+.wave i {
+    flex: 1;
+    min-width: 0;
+    height: 2%;
+    border-radius: 0.04rem;
+    background: linear-gradient(180deg,
+        color-mix(in srgb, var(--accent) 55%, white) 0%,
         var(--accent) 100%);
-    box-shadow: 0 0 0.4rem color-mix(in srgb, var(--accent) 70%, transparent);
 }
 
 .times {
@@ -283,7 +288,7 @@ body.no-serial .leds { display: none; }
         <div class="title-wrap"><span class="title" id="title">재생 중인 곡 없음</span></div>
         <div class="artist" id="artist"></div>
 
-        <div class="bar"><div class="fill" id="fill"></div></div>
+        <div class="wave" id="wave"></div>
 
         <div class="times">
             <span class="elapsed" id="elapsed">0:00</span>
@@ -294,19 +299,29 @@ body.no-serial .leds { display: none; }
 
 <script>
 const API = "/api/now";
-const POLL_MS = 120;        // LED 표시등이 따라올 정도로는 자주 물어본다
+const POLL_MS = 80;         // 파동이 음악을 따라올 정도로는 자주 물어본다
+const BARS = 26;            // 128밴드를 이만큼으로 묶는다. 좁은 위젯이라 그대로는 못 쓴다
 
 const el = {
     body: document.body,
     cover: document.getElementById("cover"),
     title: document.getElementById("title"),
     artist: document.getElementById("artist"),
-    fill: document.getElementById("fill"),
+    wave: document.getElementById("wave"),
     elapsed: document.getElementById("elapsed"),
     total: document.getElementById("total"),
     statusText: document.getElementById("statusText"),
     leds: [...document.querySelectorAll(".leds i")],
 };
+
+// 파동 막대를 만들어 둔다. 목표값과 화면값을 따로 두고 매 프레임 좁혀 간다.
+const bars = Array.from({ length: BARS }, () => {
+    const b = document.createElement("i");
+    el.wave.appendChild(b);
+    return b;
+});
+let waveTarget = new Array(BARS).fill(0);
+let waveShown = new Array(BARS).fill(0);
 
 let track = null;           // 마지막으로 받은 서버 상태
 let currentId = null;
@@ -343,6 +358,7 @@ async function poll() {
             el.title.textContent = "서버를 켜 주세요";
             el.artist.textContent = "";
             setLeds([0, 0, 0, 0]);
+            setWave([]);
             track = null;
             render();
         }
@@ -382,7 +398,39 @@ function apply(d) {
                t: performance.now() };
 
     setLeds(d.levels || [0, 0, 0, 0]);
+    setWave(d.playing ? (d.spectrum || []) : []);
     render();       // rAF가 멈춰 있어도 최소 폴링 주기로는 갱신된다
+}
+
+/* 128밴드를 BARS개로 묶는다.
+   최댓값만 쓰면 다섯 칸 중 하나만 세도 막대가 끝까지 올라가서, 전부 위에
+   붙은 벽처럼 보인다. 평균만 쓰면 반대로 봉우리가 깎여 밋밋해진다.
+   둘을 반반 섞어야 타격은 살고 높낮이도 남는다. */
+function setWave(spectrum) {
+    if (!spectrum.length) { waveTarget.fill(0); return; }
+    const per = spectrum.length / BARS;
+    for (let i = 0; i < BARS; i++) {
+        const from = Math.floor(i * per);
+        const to = Math.max(from + 1, Math.floor((i + 1) * per));
+        let peak = 0, sum = 0, n = 0;
+        for (let j = from; j < to && j < spectrum.length; j++) {
+            if (spectrum[j] > peak) peak = spectrum[j];
+            sum += spectrum[j]; n++;
+        }
+        waveTarget[i] = (peak * 0.5 + (sum / n) * 0.5) / 255;
+    }
+}
+
+function drawWave() {
+    for (let i = 0; i < BARS; i++) {
+        const t = waveTarget[i];
+        // 오를 때는 빠르게, 내릴 때는 천천히. 타격이 살고 잔상이 남는다
+        const k = t > waveShown[i] ? 0.45 : 0.16;
+        waveShown[i] += (t - waveShown[i]) * k;
+        // 지수를 1보다 크게 둬서 중간값을 아래로 벌린다. 그대로 쓰면
+        // 상용 음원은 대부분 위쪽에 몰려 있어 높낮이가 안 보인다.
+        bars[i].style.height = (3 + Math.pow(waveShown[i], 1.5) * 97).toFixed(1) + "%";
+    }
 }
 
 function setLeds(levels) {
@@ -447,17 +495,36 @@ function dominantColor(img) {
         const score = v.n * (1 + v.w / v.n / 255);
         if (!best || score > best.score) best = { score, v };
     }
-    let { r, g, b } = best.v;
     const n = best.v.n;
-    r /= n; g /= n; b /= n;
+    /* 커버에서는 **색상만** 가져오고 채도와 밝기는 위젯 값으로 덮는다.
+       픽셀을 평균 내면 채도가 빠지고 밝기는 커버마다 제각각이라, 그대로 쓰면
+       어떤 앨범은 형광색이고 어떤 앨범은 탁한 베이지가 된다. 색상만 살리면
+       앨범의 인상은 남으면서 어두운 카드 위에서 항상 같은 만큼 읽힌다. */
+    const [h, s] = rgbToHs(best.v.r / n, best.v.g / n, best.v.b / n);
+    return hslToCss(h, Math.max(0.52, Math.min(0.85, s * 1.35)), 0.62);
+}
 
-    // 어두운 배경 위에서 읽히도록 밝기를 끌어올린다
-    const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-    if (lum < 0.45) {
-        const k = 0.45 / Math.max(lum, 0.04);
-        r = Math.min(255, r * k); g = Math.min(255, g * k); b = Math.min(255, b * k);
-    }
-    return `rgb(${r | 0}, ${g | 0}, ${b | 0})`;
+/// rgb(0~255) -> [색상 0~1, 채도 0~1]
+function rgbToHs(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+    const l = (max + min) / 2;
+    if (!d) return [0, 0];
+    const s = d / (1 - Math.abs(2 * l - 1));
+    let h;
+    if (max === r)      h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else                h = (r - g) / d + 4;
+    return [((h / 6) + 1) % 1, Math.min(1, s)];
+}
+
+function hslToCss(h, s, l) {
+    const f = n => {
+        const k = (n + h * 12) % 12;
+        const a = s * Math.min(l, 1 - l);
+        return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))));
+    };
+    return `rgb(${f(0)}, ${f(8)}, ${f(4)})`;
 }
 
 // ------------------------------------------------------------------
@@ -487,10 +554,8 @@ function currentPos() {
 }
 
 function render() {
-    const pos = currentPos();
-    const dur = track && track.duration ? track.duration : 0;
-    el.elapsed.textContent = fmt(pos);
-    el.fill.style.width = dur ? Math.min(100, (pos / dur) * 100).toFixed(2) + "%" : "0%";
+    el.elapsed.textContent = fmt(currentPos());
+    drawWave();
 }
 
 let rafTicks = 0, lastRafTicks = -1;

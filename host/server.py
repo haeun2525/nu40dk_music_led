@@ -479,6 +479,11 @@ _NOISE = re.compile(
     r"[^)\]】]*[\)\]】]",
     re.IGNORECASE,
 )
+# 괄호 없이 뒤에 붙는 꼬리표. 끝에 있을 때만 떼야 곡 이름을 다치지 않는다.
+_TAIL = re.compile(
+    r"\s*[-–—|]?\s*(?:m/?v|official\s+(?:music\s+)?video|official\s+audio|lyric\s+video)\s*$",
+    re.IGNORECASE,
+)
 _SEPARATORS = (" - ", " – ", " — ", " ‐ ", " ~ ")
 
 
@@ -490,7 +495,7 @@ def split_artist_title(raw: str) -> tuple[str, str]:
     나뉘지 않으면 아티스트를 비우고 제목만 보여준다. 잘못 쪼개서 곡 이름이
     사라지는 것보다 아티스트가 없는 편이 낫다.
     """
-    title = _NOISE.sub("", raw or "").strip(" -–—·|")
+    title = _TAIL.sub("", _NOISE.sub("", raw or "")).strip(" -–—·|")
     if not title:
         return "", raw or ""
 
@@ -553,9 +558,17 @@ class MusicLEDHandler(BaseHTTPRequestHandler):
                 base = sync_time
                 walltime = sync_walltime
                 levels_list = [int(v) for v in current_levels]
+                spectrum_list = [int(v) for v in current_spectrum]
 
-            # 브라우저는 1초마다 정수 초를 보낸다. 그 사이는 단조 시계로 채운다.
-            position = base + (time.monotonic() - walltime) if playing else base
+            # 브라우저는 재생 중 1초마다 위치를 보낸다. 그게 끊겼다는 것은 탭이
+            # 닫혔거나 멈췄다는 뜻이다. 그대로 두면 있지도 않은 재생이 영원히
+            # 앞으로 흐른다. 유령 트랙을 띄우느니 재생 아님으로 본다.
+            age = time.monotonic() - walltime
+            if playing and age > 3.0:
+                playing = False
+
+            # 마지막 보고 이후 흐른 시간만큼 채워 넣는다
+            position = base + age if playing else base
 
             meta = levels_meta.get(vid or "", {})
             # 제목을 모른 채 분석되면 levels_meta에 영상 id가 제목으로 남는다.
@@ -576,6 +589,7 @@ class MusicLEDHandler(BaseHTTPRequestHandler):
                 "position": position,
                 "duration": duration,
                 "levels": levels_list,
+                "spectrum": spectrum_list if playing else [],
                 "serial": serial_connected,
             }
             self.send_response(200)
