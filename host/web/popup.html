@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>NU40DK Now Playing</title>
+<style>
+/* ------------------------------------------------------------------
+   데스크톱 팝업 위젯.
+   네이티브 창(NU40DKPopup)이 이 페이지를 투명 배경으로 띄운다.
+
+   창 크기가 변해도 디자인이 깨지지 않아야 한다. 그래서 모든 치수를
+   rem으로 쓰고, 루트 폰트 크기를 창 너비에 비례시킨다. 창은 종횡비가
+   고정되어 있으므로 이 한 줄이 전체 배율 조정이 된다.
+   기준 폭 380px에서 1rem = 16px.
+------------------------------------------------------------------ */
+:root {
+    font-size: calc(100vw / 25);
+
+    --bg: rgba(17, 18, 22, 0.88);
+    --line: rgba(255, 255, 255, 0.10);
+    --text: rgba(255, 255, 255, 0.96);
+    --muted: rgba(255, 255, 255, 0.46);
+    --faint: rgba(255, 255, 255, 0.28);
+    --accent: #8b7fff;          /* 앨범 커버에서 뽑은 색으로 교체된다 */
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+    width: 100%; height: 100%;
+    background: transparent;    /* 창이 투명하다. 여기에 색을 칠하면 사각형이 드러난다 */
+    overflow: hidden;
+    -webkit-user-select: none;
+    cursor: default;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", system-ui, sans-serif;
+    /* 네이티브 창 그림자는 사각형이라 둥근 카드와 어긋난다. 그래서 껐고
+       그림자를 CSS로 그린다. 대신 그림자가 창 밖으로 나가면 그 자리에서
+       뚝 잘려서 사각형 테두리처럼 보인다. 여백은 반드시 그림자가 완전히
+       사라지는 거리(오프셋+블러)보다 넓어야 한다. 아래 카드 기준 약 18px. */
+    padding: 1.25rem;
+}
+
+/* ---------- 카드 ---------- */
+.card {
+    position: relative;
+    width: 100%; height: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    padding: 0.875rem;
+    border-radius: 1.125rem;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    /* 가까운 그림자로 형태를 잡고, 먼 그림자는 옅게 깔아 바탕으로 녹인다.
+       backdrop-filter는 쓰지 않는다. 투명 창 안의 웹뷰는 바탕화면을
+       읽지 못해서 흐려질 대상이 없고, 합성 레이어만 하나 더 만든다. */
+    box-shadow:
+        0 0.125rem 0.25rem rgba(0, 0, 0, 0.30),
+        0 0.25rem 0.75rem rgba(0, 0, 0, 0.28),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+}
+
+/* 앨범 색이 카드 왼쪽에서 은은하게 번진다 */
+.card::before {
+    content: "";
+    position: absolute;
+    left: -20%; top: 50%;
+    width: 70%; aspect-ratio: 1;
+    transform: translateY(-50%);
+    background: radial-gradient(circle, var(--accent) 0%, transparent 68%);
+    opacity: 0.30;
+    filter: blur(0.75rem);
+    pointer-events: none;
+    transition: opacity 0.6s ease;
+}
+body.idle .card::before { opacity: 0.10; }
+
+/* ---------- 왼쪽: 바이닐 ---------- */
+.vinyl {
+    position: relative;
+    flex: none;
+    width: 5.5rem; height: 5.5rem;
+    border-radius: 50%;
+    /* 판의 홈. 반복 그라디언트 한 줄로 만든다 */
+    background:
+        repeating-radial-gradient(circle at 50% 50%,
+            #16161a 0, #16161a 0.055rem,
+            #0b0b0e 0.055rem, #0b0b0e 0.11rem),
+        #101014;
+    box-shadow:
+        0 0.25rem 0.75rem rgba(0, 0, 0, 0.55),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+    animation: spin 5.5s linear infinite;
+    animation-play-state: paused;   /* 재생 중일 때만 돈다 */
+}
+body.playing .vinyl { animation-play-state: running; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* 판에 비치는 빛 */
+.vinyl::after {
+    content: "";
+    position: absolute; inset: 0;
+    border-radius: 50%;
+    background: linear-gradient(125deg,
+        rgba(255, 255, 255, 0.16) 0%,
+        transparent 32%,
+        transparent 62%,
+        rgba(255, 255, 255, 0.07) 88%);
+    pointer-events: none;
+}
+
+/* 가운데 라벨이 앨범 커버 */
+.label {
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 2.5rem; height: 2.5rem;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    overflow: hidden;
+    background: #24242c;
+    box-shadow:
+        0 0 0 1px rgba(0, 0, 0, 0.6),
+        0 0.125rem 0.375rem rgba(0, 0, 0, 0.5);
+}
+.label img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    opacity: 0;
+    transition: opacity 0.45s ease;
+}
+.label img.on { opacity: 1; }
+
+/* 스핀들 구멍 */
+.label::after {
+    content: "";
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 0.4rem; height: 0.4rem;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: #08080a;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+/* ---------- 오른쪽: 정보 ---------- */
+.info {
+    flex: 1;
+    min-width: 0;               /* 이게 없으면 말줄임이 동작하지 않는다 */
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.1rem;
+}
+
+.status {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.5rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--faint);
+    white-space: nowrap;
+}
+.dot {
+    width: 0.3rem; height: 0.3rem;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0.35rem var(--accent);
+}
+body:not(.playing) .dot { background: var(--faint); box-shadow: none; }
+
+/* 보드 LED 4개를 그대로 비추는 표시등 */
+.leds { display: flex; gap: 0.22rem; }
+.leds i {
+    width: 0.28rem; height: 0.28rem;
+    border-radius: 50%;
+    background: #fff;
+    opacity: 0.10;
+    transition: opacity 0.09s linear, box-shadow 0.09s linear;
+}
+body.no-serial .leds { display: none; }
+
+.title-wrap { overflow: hidden; }
+.title {
+    display: inline-block;
+    font-size: 0.9rem;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    color: var(--text);
+    white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+}
+/* 제목이 넘칠 때만 흘려보낸다. 넘치지 않으면 말줄임조차 필요 없다 */
+.title.scroll {
+    max-width: none;
+    text-overflow: clip;
+    animation: marquee var(--dur, 12s) linear infinite;
+}
+@keyframes marquee {
+    0%, 12%   { transform: translateX(0); }
+    88%, 100% { transform: translateX(var(--shift, 0)); }
+}
+
+.artist {
+    font-size: 0.68rem;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.artist:empty::before { content: "\00a0"; }   /* 비어도 줄 높이는 유지 */
+
+/* ---------- 진행 ---------- */
+.bar {
+    position: relative;
+    height: 0.22rem;
+    margin-top: 0.4rem;
+    border-radius: 0.11rem;
+    background: rgba(255, 255, 255, 0.13);
+    overflow: hidden;
+}
+.fill {
+    position: absolute; inset: 0;
+    width: 0%;
+    border-radius: inherit;
+    background: linear-gradient(90deg,
+        color-mix(in srgb, var(--accent) 60%, white) 0%,
+        var(--accent) 100%);
+    box-shadow: 0 0 0.4rem color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+.times {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-top: 0.3rem;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+}
+.elapsed {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: -0.02em;
+}
+.total {
+    font-size: 0.6rem;
+    color: var(--faint);
+    letter-spacing: 0.02em;
+}
+</style>
+</head>
+<body class="idle">
+
+<div class="card">
+    <div class="vinyl">
+        <div class="label"><img id="cover" alt=""></div>
+    </div>
+
+    <div class="info">
+        <div class="top">
+            <div class="status"><span class="dot"></span><span id="statusText">NOW PLAYING</span></div>
+            <div class="leds"><i></i><i></i><i></i><i></i></div>
+        </div>
+
+        <div class="title-wrap"><span class="title" id="title">재생 중인 곡 없음</span></div>
+        <div class="artist" id="artist"></div>
+
+        <div class="bar"><div class="fill" id="fill"></div></div>
+
+        <div class="times">
+            <span class="elapsed" id="elapsed">0:00</span>
+            <span class="total" id="total">0:00</span>
+        </div>
+    </div>
+</div>
+
+<script>
+const API = "/api/now";
+const POLL_MS = 120;        // LED 표시등이 따라올 정도로는 자주 물어본다
+
+const el = {
+    body: document.body,
+    cover: document.getElementById("cover"),
+    title: document.getElementById("title"),
+    artist: document.getElementById("artist"),
+    fill: document.getElementById("fill"),
+    elapsed: document.getElementById("elapsed"),
+    total: document.getElementById("total"),
+    statusText: document.getElementById("statusText"),
+    leds: [...document.querySelectorAll(".leds i")],
+};
+
+let track = null;           // 마지막으로 받은 서버 상태
+let currentId = null;
+let offline = false;
+
+/* 재생 위치는 더하지 않고 기준점에서 계산한다.
+   dt를 누적하면 창이 가려져 rAF가 멈춘 동안의 시간이 통째로 사라져서
+   다시 보일 때 시계가 뒤처져 있다. 기준점 방식은 멈췄다 깨어나도 맞다. */
+let anchor = { pos: 0, t: performance.now() };
+
+function fmt(sec) {
+    if (!isFinite(sec) || sec < 0) sec = 0;
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return m + ":" + String(s).padStart(2, "0");
+}
+
+// ------------------------------------------------------------------
+// 폴링
+// ------------------------------------------------------------------
+async function poll() {
+    try {
+        const r = await fetch(API, { cache: "no-store" });
+        if (!r.ok) throw new Error(r.status);
+        apply(await r.json());
+        if (offline) { offline = false; el.body.classList.remove("offline"); }
+    } catch (e) {
+        // 서버가 꺼졌다. 위젯은 남겨두고 상태만 알린다
+        if (!offline) {
+            offline = true;
+            el.body.classList.add("offline", "idle");
+            el.body.classList.remove("playing");
+            el.statusText.textContent = "서버 꺼짐";
+            el.title.textContent = "서버를 켜 주세요";
+            el.artist.textContent = "";
+            setLeds([0, 0, 0, 0]);
+            track = null;
+            render();
+        }
+    }
+}
+
+function apply(d) {
+    const shown = currentPos();     // track을 갈아치우기 전에 읽어야 한다
+    track = d;
+
+    // 곡이 바뀌었을 때만 커버와 색을 갈아끼운다
+    if (d.id !== currentId) {
+        currentId = d.id;
+        anchor = { pos: d.position || 0, t: performance.now() };
+        swapCover(d.id);
+    }
+
+    el.body.classList.toggle("playing", !!d.playing);
+    el.body.classList.toggle("idle", !d.id);
+    el.body.classList.toggle("no-serial", !d.serial);
+
+    el.statusText.textContent = !d.id ? "IDLE" : (d.playing ? "NOW PLAYING" : "PAUSED");
+
+    const title = d.title || (d.id ? "제목 없음" : "재생 중인 곡 없음");
+    if (el.title.textContent !== title) {
+        el.title.textContent = title;
+        requestAnimationFrame(fitTitle);
+    }
+    el.artist.textContent = d.artist || "";
+    el.total.textContent = fmt(d.duration);
+
+    // 서버 위치로 부드럽게 맞춘다. 브라우저가 1초마다 정수 초를 보내므로
+    // 그대로 대입하면 초마다 눈에 띄게 튄다.
+    const server = d.position || 0;
+    const snap = !d.playing || Math.abs(server - shown) > 1.2;
+    anchor = { pos: snap ? server : shown + (server - shown) * 0.12,
+               t: performance.now() };
+
+    setLeds(d.levels || [0, 0, 0, 0]);
+    render();       // rAF가 멈춰 있어도 최소 폴링 주기로는 갱신된다
+}
+
+function setLeds(levels) {
+    el.leds.forEach((led, i) => {
+        const v = (levels[i] || 0) / 255;
+        led.style.opacity = (0.10 + v * 0.90).toFixed(3);
+        led.style.boxShadow = v > 0.15
+            ? `0 0 ${(v * 0.5).toFixed(2)}rem rgba(255,255,255,${(v * 0.8).toFixed(2)})`
+            : "none";
+    });
+}
+
+// ------------------------------------------------------------------
+// 커버 이미지와 강조색
+// ------------------------------------------------------------------
+function swapCover(id) {
+    el.cover.classList.remove("on");
+    if (!id) {
+        document.documentElement.style.setProperty("--accent", "#8b7fff");
+        return;
+    }
+    const img = new Image();
+    img.crossOrigin = "anonymous";      // 같은 출처라 캔버스가 오염되지 않는다
+    img.onload = () => {
+        el.cover.src = img.src;
+        el.cover.classList.add("on");
+        document.documentElement.style.setProperty("--accent", dominantColor(img));
+    };
+    img.onerror = () => el.cover.classList.remove("on");
+    img.src = "/api/thumb/" + id;
+}
+
+/* 커버에서 위젯 강조색을 뽑는다. 어둡거나 회색인 픽셀은 버리고,
+   채도가 높은 쪽에 가중치를 준다. 그러지 않으면 대부분의 커버가
+   칙칙한 회갈색 하나로 수렴한다. */
+function dominantColor(img) {
+    const N = 48;
+    const c = document.createElement("canvas");
+    c.width = c.height = N;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, N, N);
+
+    let px;
+    try { px = ctx.getImageData(0, 0, N, N).data; }
+    catch (e) { return "#8b7fff"; }
+
+    const bins = new Map();
+    for (let i = 0; i < px.length; i += 4) {
+        const r = px[i], g = px[i + 1], b = px[i + 2];
+        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+        const sat = max - min;
+        if (max < 40 || max > 245 || sat < 28) continue;    // 검정·흰색·무채색 제외
+        const key = (r >> 5) + "," + (g >> 5) + "," + (b >> 5);
+        const cur = bins.get(key) || { n: 0, r: 0, g: 0, b: 0, w: 0 };
+        cur.n++; cur.r += r; cur.g += g; cur.b += b; cur.w += sat;
+        bins.set(key, cur);
+    }
+    if (!bins.size) return "#8b7fff";
+
+    let best = null;
+    for (const v of bins.values()) {
+        const score = v.n * (1 + v.w / v.n / 255);
+        if (!best || score > best.score) best = { score, v };
+    }
+    let { r, g, b } = best.v;
+    const n = best.v.n;
+    r /= n; g /= n; b /= n;
+
+    // 어두운 배경 위에서 읽히도록 밝기를 끌어올린다
+    const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+    if (lum < 0.45) {
+        const k = 0.45 / Math.max(lum, 0.04);
+        r = Math.min(255, r * k); g = Math.min(255, g * k); b = Math.min(255, b * k);
+    }
+    return `rgb(${r | 0}, ${g | 0}, ${b | 0})`;
+}
+
+// ------------------------------------------------------------------
+// 제목 흘려보내기: 넘칠 때만
+// ------------------------------------------------------------------
+function fitTitle() {
+    const t = el.title, wrap = t.parentElement;
+    t.classList.remove("scroll");
+    t.style.removeProperty("--shift");
+    const over = t.scrollWidth - wrap.clientWidth;
+    if (over > 2) {
+        t.style.setProperty("--shift", `-${over + 6}px`);
+        t.style.setProperty("--dur", `${Math.max(9, (over + 6) / 14 + 7).toFixed(1)}s`);
+        t.classList.add("scroll");
+    }
+}
+
+// ------------------------------------------------------------------
+// 그리기: 폴링과 분리해서 60fps로 돈다
+// ------------------------------------------------------------------
+function currentPos() {
+    if (!track || !track.id) return 0;
+    let p = anchor.pos;
+    if (track.playing) p += (performance.now() - anchor.t) / 1000;
+    if (track.duration) p = Math.min(p, track.duration);
+    return Math.max(0, p);
+}
+
+function render() {
+    const pos = currentPos();
+    const dur = track && track.duration ? track.duration : 0;
+    el.elapsed.textContent = fmt(pos);
+    el.fill.style.width = dur ? Math.min(100, (pos / dur) * 100).toFixed(2) + "%" : "0%";
+}
+
+let rafTicks = 0, lastRafTicks = -1;
+function loop() { rafTicks++; render(); requestAnimationFrame(loop); }
+
+setInterval(poll, POLL_MS);
+poll();
+requestAnimationFrame(loop);
+
+/* 창이 가려지거나 화면이 잠기면 rAF가 통째로 멈춘다. 그러면 다시 보일 때
+   깨어나지 않는다. 멈춰 있으면 되살린다. render()가 기준점에서 매번 새로
+   계산하므로 루프가 겹쳐 돌아도 값이 어긋나지 않는다. */
+setInterval(() => {
+    if (rafTicks === lastRafTicks) loop();
+    lastRafTicks = rafTicks;
+}, 2000);
+
+window.addEventListener("resize", () => requestAnimationFrame(fitTitle));
+</script>
+</body>
+</html>

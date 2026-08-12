@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import subprocess
 import sys
 import threading
@@ -470,6 +471,41 @@ def serial_loop():
 # HTTP 요청 핸들러
 # --------------------------------------------------------------------------
 
+# 제목에 붙는 홍보 문구. 팝업은 좁아서 이게 남으면 곡 이름이 잘린다.
+_NOISE = re.compile(
+    r"\s*[\(\[【][^)\]】]*"
+    r"(?:official|mv|m/v|video|audio|lyrics?|visuali[sz]er|hd|4k|remaster(?:ed)?"
+    r"|가사|뮤직비디오|공식)"
+    r"[^)\]】]*[\)\]】]",
+    re.IGNORECASE,
+)
+_SEPARATORS = (" - ", " – ", " — ", " ‐ ", " ~ ")
+
+
+def split_artist_title(raw: str) -> tuple[str, str]:
+    """유튜브 제목을 (아티스트, 곡 이름)으로 나눈다.
+
+    유튜브는 아티스트를 따로 주지 않는다. 업로더 이름은 레이블 채널인 경우가
+    많아서 오히려 더 틀린다. 그래서 제목의 관용 표기 'Artist - Title'을 쓴다.
+    나뉘지 않으면 아티스트를 비우고 제목만 보여준다. 잘못 쪼개서 곡 이름이
+    사라지는 것보다 아티스트가 없는 편이 낫다.
+    """
+    title = _NOISE.sub("", raw or "").strip(" -–—·|")
+    if not title:
+        return "", raw or ""
+
+    for sep in _SEPARATORS:
+        if sep in title:
+            left, right = title.split(sep, 1)
+            left, right = left.strip(), right.strip()
+            # 왼쪽이 지나치게 길면 아티스트가 아니라 문장이 쪼개진 것이다
+            if left and right and len(left) <= 40:
+                return left, right
+            break
+
+    return "", title
+
+
 class MusicLEDHandler(BaseHTTPRequestHandler):
     """웹 UI와 API 엔드포인트를 처리한다."""
 
@@ -494,6 +530,58 @@ class MusicLEDHandler(BaseHTTPRequestHandler):
                 self.send_header("Content-Type", "text/plain")
                 self.end_headers()
                 self.wfile.write(b"index.html not found")
+
+        elif self.path == "/popup":
+            # 데스크톱 팝업 위젯: web/popup.html
+            html_path = WEB_DIR / "popup.html"
+            if html_path.exists():
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(html_path.read_bytes())
+            else:
+                self.send_response(404)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(b"popup.html not found")
+
+        elif self.path == "/api/now":
+            # 지금 재생 중인 곡. 팝업 위젯이 폴링한다.
+            with state_lock:
+                vid = sync_id
+                playing = sync_playing
+                base = sync_time
+                walltime = sync_walltime
+                levels_list = [int(v) for v in current_levels]
+
+            # 브라우저는 1초마다 정수 초를 보낸다. 그 사이는 단조 시계로 채운다.
+            position = base + (time.monotonic() - walltime) if playing else base
+
+            meta = levels_meta.get(vid or "", {})
+            # 제목을 모른 채 분석되면 levels_meta에 영상 id가 제목으로 남는다.
+            # 나중에 목록에서 진짜 제목을 알게 되므로 그쪽을 우선한다.
+            raw_title = meta.get("title") or ""
+            if not raw_title or raw_title == vid:
+                raw_title = playlist_titles.get(vid or "") or raw_title
+            duration = float(meta.get("duration") or 0.0)
+            if duration:
+                position = max(0.0, min(position, duration))
+
+            artist, title = split_artist_title(raw_title)
+            response = {
+                "id": vid,
+                "title": title,
+                "artist": artist,
+                "playing": bool(playing and vid),
+                "position": position,
+                "duration": duration,
+                "levels": levels_list,
+                "serial": serial_connected,
+            }
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(response).encode())
 
         elif self.path.startswith("/api/thumb/"):
             # 썸네일 프록시
