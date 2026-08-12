@@ -1,0 +1,1870 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NU40DK 뮤직 LED</title>
+    <style>
+        :root {
+            --color-text: #1c1c1e;
+            --color-text-muted: #6b6b70;
+            --color-glass-bg: rgba(255, 255, 255, 0.62);
+            --color-glass-border: rgba(255, 255, 255, 0.75);
+            --accent-rose: #e8547f;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            color: var(--color-text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            overflow-x: hidden;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            min-height: 100vh;
+            padding: 28px 48px;
+            position: relative;
+            background: #f5f0ed;
+        }
+
+        /* Soft pastel background */
+        .background-gradient {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            background: #f5f0ed;
+            overflow: hidden;
+        }
+
+        .gradient-blob {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.8;
+            mix-blend-mode: multiply;
+            transition: background-color 1.2s ease-in-out;
+        }
+
+        .gradient-blob:nth-child(1) {
+            width: 60vw;
+            height: 60vw;
+            top: -10vw;
+            left: -10vw;
+            animation: drift-1 38s ease-in-out infinite;
+        }
+
+        .gradient-blob:nth-child(2) {
+            width: 50vw;
+            height: 50vw;
+            top: 15%;
+            right: -8vw;
+            animation: drift-2 47s ease-in-out infinite;
+        }
+
+        .gradient-blob:nth-child(3) {
+            width: 55vw;
+            height: 55vw;
+            bottom: -20vw;
+            left: 8%;
+            animation: drift-3 59s ease-in-out infinite;
+        }
+
+        /* 이동 폭은 반드시 vw/vh로. 60vw짜리 블롭을 30px 옮겨봐야 눈에 안 보인다.
+           크기와 투명도를 같이 흔들어야 '색이 움직이는' 느낌이 난다.
+           주기를 서로 안 맞아떨어지게 둬서 같은 패턴이 반복되지 않게 한다. */
+        @keyframes drift-1 {
+            0%   { transform: translate(0, 0) scale(1); opacity: 0.75; }
+            30%  { transform: translate(9vw, 5vh) scale(1.15); opacity: 0.9; }
+            60%  { transform: translate(-5vw, 9vh) scale(0.92); opacity: 0.68; }
+            100% { transform: translate(0, 0) scale(1); opacity: 0.75; }
+        }
+
+        @keyframes drift-2 {
+            0%   { transform: translate(0, 0) scale(1.05); opacity: 0.7; }
+            35%  { transform: translate(-11vw, 7vh) scale(0.9); opacity: 0.88; }
+            70%  { transform: translate(6vw, -6vh) scale(1.18); opacity: 0.75; }
+            100% { transform: translate(0, 0) scale(1.05); opacity: 0.7; }
+        }
+
+        @keyframes drift-3 {
+            0%   { transform: translate(0, 0) scale(0.95); opacity: 0.8; }
+            40%  { transform: translate(8vw, -8vh) scale(1.2); opacity: 0.65; }
+            75%  { transform: translate(-7vw, -3vh) scale(1.0); opacity: 0.9; }
+            100% { transform: translate(0, 0) scale(0.95); opacity: 0.8; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .gradient-blob {
+                animation: none !important;
+            }
+        }
+
+        /* Main container */
+        .container {
+            width: 100%;
+            max-width: 1100px;
+            z-index: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            margin: 0 auto;
+        }
+
+        /* Glass panels */
+        .glass-panel {
+            background: var(--color-glass-bg);
+            backdrop-filter: blur(24px) saturate(140%);
+            -webkit-backdrop-filter: blur(24px) saturate(140%);
+            border: 1px solid var(--color-glass-border);
+            border-radius: 24px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Input bar - compact */
+        .input-panel {
+            padding: 16px 24px;
+            display: flex;
+            gap: 16px;
+            align-items: center;
+        }
+
+        /* 상태 표시는 아래가 아니라 입력창 옆에 둔다 */
+        .top-status {
+            flex: 0 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 150px;
+            text-align: right;
+        }
+
+        .input-group {
+            flex: 1;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.3);
+            border: 1px solid var(--color-glass-border);
+            border-radius: 12px;
+            color: var(--color-text);
+            font-size: 14px;
+            outline: none;
+            transition: background 0.2s, border-color 0.2s;
+        }
+
+        input[type="text"]:focus {
+            background: rgba(255, 255, 255, 0.5);
+            border-color: rgba(0, 0, 0, 0.2);
+        }
+
+        input[type="text"]::placeholder {
+            color: rgba(0, 0, 0, 0.5);
+        }
+
+        button {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #e8547f, #d4466f);
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(232, 84, 127, 0.2);
+        }
+
+        button:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            background: rgba(0, 0, 0, 0.1);
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Three-card row */
+        .main-panel {
+            padding: 24px;
+            display: flex;
+            gap: 20px;
+            flex-wrap: nowrap;
+            justify-content: flex-start;
+        }
+
+        /* CARD 1: NOW PLAYING */
+        .card-now-playing {
+            flex: 0 0 360px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        /* 앨범 커버와 LP를 겹쳐 놓는 무대.
+           디스크는 커버 뒤에서 오른쪽으로 절반이 걸쳐 나온다. */
+        .album-stage {
+            position: relative;
+            width: 100%;
+            height: 240px;
+        }
+
+        .album-frame {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 240px;
+            height: 240px;
+            z-index: 2;
+            background: #0a0a0a;
+            border-radius: 14px;
+            padding: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .album-frame img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 8px;
+            user-select: none;
+            pointer-events: none;
+        }
+
+        /* src가 없으면 브라우저가 깨진 이미지 아이콘과 alt 텍스트를 그린다.
+           곡을 넣기 전에는 아예 감춘다. */
+        .album-frame img:not([src]),
+        .vinyl-label img:not([src]) {
+            display: none;
+        }
+
+        .album-frame.placeholder {
+            background: linear-gradient(135deg, #d4c5e8, #e8d4c5);
+        }
+
+        .track-info {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .track-title {
+            font-size: 19px;
+            font-weight: 700;
+            line-height: 1.3;
+            color: var(--color-text);
+            word-break: break-word;
+        }
+
+        .track-artist {
+            font-size: 14px;
+            color: var(--color-text-muted);
+        }
+
+        /* Progress bar */
+        .progress-container {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .progress-bar {
+            position: relative;
+            width: 100%;
+            height: 4px;
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 2px;
+            cursor: pointer;
+        }
+
+        .progress-fill {
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 100%;
+            background: var(--accent-rose);
+            border-radius: 2px;
+            transition: none;
+        }
+
+        .progress-handle {
+            position: absolute;
+            top: 50%;
+            width: 12px;
+            height: 12px;
+            background: var(--accent-rose);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .progress-bar:hover .progress-handle {
+            opacity: 1;
+        }
+
+        .progress-times {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: var(--color-text-muted);
+        }
+
+        /* Transport controls */
+        .transport {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .transport-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.2s;
+        }
+
+        .transport-btn:hover {
+            opacity: 0.7;
+        }
+
+        .transport-btn svg {
+            width: 20px;
+            height: 20px;
+            stroke: var(--color-text);
+            fill: none;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .play-pause-btn {
+            width: 52px;
+            height: 52px;
+            background: var(--color-text) !important;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 !important;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .play-pause-btn svg {
+            width: 24px;
+            height: 24px;
+            fill: white;
+            stroke: none;
+        }
+
+        .transport-toggle.active svg {
+            fill: var(--accent-rose);
+        }
+
+        /* CARD 2: THE RECORD */
+        .card-record {
+            flex: 0 0 230px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .vinyl-container {
+            /* 커버(240px, left:0) 오른쪽 끝에서 디스크 절반이 나오도록.
+               left = 240 - 220/2 = 130. 위치는 여기서만 잡는다 —
+               .vinyl-disc의 transform은 회전 전용이라 건드리면 안 된다. */
+            position: absolute;
+            top: 10px;
+            left: 130px;
+            width: 220px;
+            height: 220px;
+            z-index: 1;
+        }
+
+        .vinyl-disc {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, #1a1a1a, #0a0a0a);
+            box-shadow:
+                inset 0 0 40px rgba(0, 0, 0, 0.8),
+                0 0 30px rgba(0, 0, 0, 0.3),
+                0 12px 40px rgba(0, 0, 0, 0.2);
+            cursor: grab;
+            user-select: none;
+            -webkit-user-select: none;
+            animation: spin 4s linear infinite;
+            animation-play-state: paused;
+            transform-origin: center;
+        }
+
+        .vinyl-disc:active {
+            cursor: grabbing;
+        }
+
+        .vinyl-grooves {
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            background: repeating-radial-gradient(
+                circle at center,
+                transparent 0px,
+                transparent 2px,
+                rgba(255, 255, 255, 0.02) 2px,
+                rgba(255, 255, 255, 0.02) 4px
+            );
+            pointer-events: none;
+        }
+
+        .vinyl-label {
+            position: absolute;
+            width: 68px;
+            height: 68px;
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: linear-gradient(135deg, #222, #0a0a0a);
+            box-shadow: inset 0 0 15px rgba(0, 0, 0, 0.8);
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2;
+            pointer-events: none;
+        }
+
+        .vinyl-label img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 50%;
+        }
+
+        .vinyl-center-hole {
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #000;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 3;
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.8);
+            pointer-events: none;
+        }
+
+        .vinyl-caption {
+            text-align: center;
+            font-size: 12px;
+            color: var(--color-text-muted);
+            margin-top: 8px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* CARD 3: VISUALISER */
+        .card-visualizer {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .wave-panel {
+            background: #faf7f4;
+            border-radius: 16px;
+            padding: 16px;
+            min-height: 220px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #waveCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .mode-buttons {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+        }
+
+        .mode-btn {
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 600;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: var(--color-text);
+            background: rgba(0, 0, 0, 0.08);
+        }
+
+        .mode-btn.active {
+            background: var(--color-text);
+            color: white;
+        }
+
+        .mode-btn:hover:not(.active) {
+            background: rgba(0, 0, 0, 0.12);
+        }
+
+        /* Status and LED indicators */
+        .status-row {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            font-size: 12px;
+        }
+
+        .status-line {
+            color: var(--color-text-muted);
+            font-size: 11px;
+            letter-spacing: -0.1px;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            white-space: nowrap;
+        }
+
+        /* 보드 표시등과 높이를 맞추기 위한 음표 아이콘 */
+        .status-icon {
+            width: 11px;
+            height: 11px;
+            flex: 0 0 auto;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2;
+        }
+
+        /* 앱 음량. 보드 버튼으로 바뀐 값도 여기 그대로 반영된다.
+           맥 시스템 음량과는 별개라, 눈에 보이지 않으면 왜 소리가 작은지 알 수 없다. */
+        .volume-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 0 4px;
+        }
+
+        .volume-icon {
+            width: 16px;
+            height: 16px;
+            flex: 0 0 auto;
+            fill: none;
+            stroke: var(--color-text-muted);
+            stroke-width: 2;
+        }
+
+        #volumeSlider {
+            flex: 1;
+            -webkit-appearance: none;
+            appearance: none;
+            height: 4px;
+            border-radius: 2px;
+            background: rgba(0, 0, 0, 0.12);
+            outline: none;
+            cursor: pointer;
+        }
+
+        #volumeSlider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 13px;
+            height: 13px;
+            border-radius: 50%;
+            background: var(--accent-rose);
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+        }
+
+        .volume-value {
+            font-size: 11px;
+            color: var(--color-text-muted);
+            min-width: 34px;
+            text-align: right;
+        }
+
+        /* 음량 조절 피드백 */
+        .volume-toast {
+            position: fixed;
+            left: 50%;
+            bottom: 40px;
+            transform: translateX(-50%) translateY(8px);
+            padding: 10px 18px;
+            border-radius: 999px;
+            background: rgba(28, 28, 30, 0.85);
+            color: #fff;
+            font-size: 13px;
+            font-weight: 600;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s, transform 0.2s;
+            z-index: 50;
+        }
+
+        .volume-toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        /* 카톡 등 알림 감지 피드백. 음량 토스트(하단)와 겹치지 않게 위쪽에 띄우되,
+           상단 입력 바를 가리지 않도록 그 아래로 내린다 */
+        .alert-toast {
+            position: fixed;
+            left: 50%;
+            top: 148px;
+            bottom: auto;
+            transform: translateX(-50%) translateY(-8px);
+            max-width: min(420px, 86vw);
+            padding: 12px 20px;
+            border-radius: 16px;
+            background: rgba(255, 214, 10, 0.92);
+            color: #1c1c1e;
+            text-align: left;
+            line-height: 1.35;
+            box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+        }
+
+        .alert-toast.show {
+            transform: translateX(-50%) translateY(0);
+        }
+
+        .alert-toast .alert-sender {
+            display: block;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .alert-toast .alert-body {
+            display: block;
+            margin-top: 2px;
+            font-size: 12px;
+            font-weight: 500;
+            opacity: 0.85;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* 보드 연결 여부는 문장이 아니라 작은 표시등으로 */
+        .board-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 11px;
+            color: var(--color-text-muted);
+            white-space: nowrap;
+        }
+
+        .board-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #c7c7cc;
+            transition: background 0.25s, box-shadow 0.25s;
+        }
+
+        .board-dot.on {
+            background: #34c759;
+            box-shadow: 0 0 6px rgba(52, 199, 89, 0.65);
+        }
+
+        .led-dots {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+        }
+
+        .led-indicator {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .led-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.15);
+            transition: all 0.05s ease-out;
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
+        }
+
+        .led-label {
+            font-size: 10px;
+            color: var(--color-text-muted);
+            font-weight: 500;
+        }
+
+        /* Playlist section */
+        .playlist-section {
+            padding: 24px;
+            display: none;
+        }
+
+        .playlist-section.active {
+            display: block;
+        }
+
+        .playlist-header {
+            margin-bottom: 16px;
+        }
+
+        .playlist-title {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--color-text-muted);
+        }
+
+        .playlist {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .playlist-item {
+            padding: 12px 16px;
+            background: rgba(0, 0, 0, 0.04);
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 14px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            color: var(--color-text);
+        }
+
+        .playlist-item:hover {
+            background: rgba(0, 0, 0, 0.06);
+            border-color: rgba(0, 0, 0, 0.12);
+        }
+
+        .playlist-item.active {
+            background: rgba(0, 0, 0, 0.1);
+            border-color: rgba(0, 0, 0, 0.2);
+            color: var(--accent-rose);
+            font-weight: 500;
+        }
+
+        .playlist-item-number {
+            color: var(--color-text-muted);
+            font-size: 12px;
+            min-width: 24px;
+        }
+
+        .playlist-item-title {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .playlist::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .playlist::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .playlist::-webkit-scrollbar-thumb {
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 3px;
+        }
+
+        .playlist::-webkit-scrollbar-thumb:hover {
+            background: rgba(0, 0, 0, 0.15);
+        }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .main-panel {
+                flex-wrap: wrap;
+                gap: 16px;
+            }
+
+            .card-now-playing {
+                flex: 0 0 300px;
+            }
+
+            .card-record {
+                flex: 0 0 200px;
+            }
+
+            .card-visualizer {
+                flex: 1;
+                min-width: 0;
+            }
+        }
+
+        @media (max-width: 900px) {
+            body {
+                padding: 16px;
+            }
+
+            .container {
+                gap: 12px;
+            }
+
+            .main-panel {
+                flex-direction: column;
+                padding: 16px;
+                gap: 16px;
+            }
+
+            .card-now-playing, .card-record, .card-visualizer {
+                width: 100%;
+                flex: 1;
+            }
+
+            .input-panel {
+                padding: 12px 16px;
+            }
+
+            .glass-panel {
+                border-radius: 16px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            body {
+                padding: 12px;
+            }
+
+            .track-title {
+                font-size: 16px;
+            }
+
+            .input-panel {
+                padding: 12px;
+                flex-direction: column;
+            }
+
+            .main-panel {
+                padding: 16px;
+            }
+        }
+
+        /* Loading */
+        .loading-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--color-text);
+            font-size: 14px;
+        }
+
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(0, 0, 0, 0.15);
+            border-top-color: var(--accent-rose);
+            border-radius: 50%;
+            animation: spin-loader 0.8s linear infinite;
+        }
+
+        @keyframes spin-loader {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="background-gradient" id="bgGradient">
+        <div class="gradient-blob"></div>
+        <div class="gradient-blob"></div>
+        <div class="gradient-blob"></div>
+    </div>
+
+    <div class="container">
+        <!-- Input bar -->
+        <div class="glass-panel input-panel">
+            <div class="input-group">
+                <input
+                    type="text"
+                    id="urlInput"
+                    placeholder="유튜브 영상 또는 재생목록 링크"
+                >
+            </div>
+            <button id="submitBtn" onclick="loadPlaylist()">추가</button>
+            <div class="top-status">
+                <div class="status-line"><svg class="status-icon" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg><span id="playlistStatus">재생목록 준비 중</span></div>
+                <div class="board-chip"><span class="board-dot" id="boardDot"></span><span id="boardStatus">보드 확인 중</span></div>
+            </div>
+        </div>
+
+        <!-- Main panel: three cards in a row -->
+        <div class="glass-panel main-panel">
+            <!-- CARD 1: NOW PLAYING -->
+            <div class="card-now-playing">
+                <div class="album-stage">
+                    <div class="vinyl-container">
+                        <div class="vinyl-disc" id="vinylDisc" draggable="false">
+                            <div class="vinyl-grooves"></div>
+                            <div class="vinyl-label">
+                                <img id="vinylLabelImg" alt="" draggable="false">
+                            </div>
+                            <div class="vinyl-center-hole"></div>
+                        </div>
+                    </div>
+                    <div class="album-frame placeholder" id="albumCover">
+                        <img id="albumCoverImg" alt="" draggable="false">
+                    </div>
+                </div>
+
+                <div class="track-info">
+                    <div class="track-title" id="trackTitle">재생 준비 중...</div>
+                    <div class="track-artist" id="trackArtist"></div>
+                </div>
+
+                <div class="progress-container">
+                    <div class="progress-bar" id="progressBar">
+                        <div class="progress-fill" id="progressFill"></div>
+                        <div class="progress-handle" id="progressHandle"></div>
+                    </div>
+                    <div class="progress-times">
+                        <span id="currentTime">0:00</span>
+                        <span id="totalTime">0:00</span>
+                    </div>
+                </div>
+
+                <div class="transport">
+                    <button class="transport-btn transport-toggle" id="shuffleBtn" title="Shuffle">
+                        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="m15 15 6 6"/><path d="m4 4 5 5"/></svg>
+                    </button>
+                    <button class="transport-btn" id="prevBtn" title="Previous">
+                        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M19 20 9 12l10-8z"/><path d="M5 19V5"/></svg>
+                    </button>
+                    <button class="play-pause-btn" id="playPauseBtn" title="Play">
+                        <svg id="playIcon" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        <svg id="pauseIcon" style="display:none;" viewBox="0 0 24 24"><rect x="6" y="3" width="4" height="18"/><rect x="14" y="3" width="4" height="18"/></svg>
+                    </button>
+                    <button class="transport-btn" id="nextBtn" title="Next">
+                        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4l10 8-10 8z"/><path d="M19 5v14"/></svg>
+                    </button>
+                    <button class="transport-btn transport-toggle" id="repeatBtn" title="Repeat">
+                        <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="m17 1 4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="m7 23-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                    </button>
+                </div>
+
+                <div class="volume-row">
+                    <svg class="volume-icon" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a9 9 0 0 1 0 14"/></svg>
+                    <input type="range" id="volumeSlider" min="0" max="100" value="100">
+                    <span class="volume-value" id="volumeValue">100%</span>
+                </div>
+            </div>
+
+            <!-- CARD 3: VISUALISER -->
+            <div class="card-visualizer">
+                <div class="wave-panel">
+                    <canvas id="waveCanvas"></canvas>
+                </div>
+
+                <div class="mode-buttons">
+                    <button class="mode-btn" id="modeLedTest" onclick="ledTest()">LED 테스트</button>
+                </div>
+
+                <div class="status-row">
+                    <div class="led-dots">
+                        <div class="led-indicator">
+                            <div class="led-dot" id="ledDot0"></div>
+                            <div class="led-label">BASS</div>
+                        </div>
+                        <div class="led-indicator">
+                            <div class="led-dot" id="ledDot1"></div>
+                            <div class="led-label">LOW</div>
+                        </div>
+                        <div class="led-indicator">
+                            <div class="led-dot" id="ledDot2"></div>
+                            <div class="led-label">MID</div>
+                        </div>
+                        <div class="led-indicator">
+                            <div class="led-dot" id="ledDot3"></div>
+                            <div class="led-label">HIGH</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Playlist section (hidden if ≤1 track) -->
+        <div class="glass-panel playlist-section" id="playlistSection">
+            <div class="playlist-header">
+                <span class="playlist-title">재생목록</span>
+            </div>
+            <ul class="playlist" id="playlist"></ul>
+        </div>
+    </div>
+
+    <audio id="audioEl" preload="auto" crossorigin="anonymous"></audio>
+
+    <script>
+        // ===== App State =====
+        let playlist = [];
+        let currentTrackIndex = 0;
+        let currentTrack = null;
+        let isLoading = false;
+        let currentDuration = 0;
+        let isPlaying = false;
+
+        let currentColors = [
+            { r: 200, g: 150, b: 180 },
+            { r: 220, g: 170, b: 160 },
+            { r: 180, g: 200, b: 190 }
+        ];
+
+        // Wave state
+        let spectrumData = new Array(128).fill(0);
+        let spectrumSmoothData = new Array(128).fill(0);
+        let levels = [0, 0, 0, 0];
+
+        // Canvas setup
+        let canvas, ctx, canvasWidth, canvasHeight, devicePixelRatio;
+
+        // Vinyl drag state
+        let isScrubbing = false;
+        let scrubStartY = 0;
+        let scrubStartTime = 0;
+        let scrubLatestY = 0;
+        let vinylBaseAngle = 0;
+        let lastScrubSync = 0;
+        const SCRUB_SEC_PER_PX = 0.12;
+        const SCRUB_THROTTLE_MS = 80;
+
+        // ===== Audio Element =====
+        const audioEl = document.getElementById('audioEl');
+
+        audioEl.addEventListener('play', () => {
+            isPlaying = true;
+            updateVinylAnimation();
+            updatePlayPauseButton();
+            syncWithServer();
+        });
+
+        audioEl.addEventListener('pause', () => {
+            isPlaying = false;
+            updateVinylAnimation();
+            updatePlayPauseButton();
+            syncWithServer();
+        });
+
+        audioEl.addEventListener('ended', () => {
+            isPlaying = false;
+            updateVinylAnimation();
+            updatePlayPauseButton();
+            nextTrack();
+        });
+
+        // ===== API Functions =====
+        async function apiCall(endpoint, method = 'GET', body = null) {
+            const options = {
+                method,
+                headers: { 'Content-Type': 'application/json' }
+            };
+            if (body) options.body = JSON.stringify(body);
+
+            try {
+                const response = await fetch(endpoint, options);
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || `HTTP ${response.status}`);
+                }
+                return await response.json();
+            } catch (error) {
+                console.error(`API call failed: ${endpoint}`, error);
+                throw error;
+            }
+        }
+
+        async function loadPlaylist() {
+            const url = document.getElementById('urlInput').value.trim();
+            if (!url) {
+                alert('URL을 입력하세요');
+                return;
+            }
+
+            isLoading = true;
+            updateLoadingState();
+
+            try {
+                const result = await apiCall('/api/playlist', 'POST', { url });
+                const incoming = result.tracks || [];
+
+                if (incoming.length === 0) {
+                    alert('재생목록이 비어있습니다');
+                    return;
+                }
+
+                // 교체가 아니라 누적한다. 버튼이 "추가"인 이유이기도 하고,
+                // 링크를 하나씩 넣어도 이전/다음 버튼이 오갈 곡이 생긴다.
+                const known = new Set(playlist.map(t => t.id));
+                const fresh = incoming.filter(t => !known.has(t.id));
+                const firstNewIndex = playlist.length;
+                playlist = playlist.concat(fresh);
+
+                document.getElementById('urlInput').value = '';
+                renderPlaylist();
+
+                if (fresh.length > 0) {
+                    // 방금 넣은 곡부터 재생 (이전 곡들은 목록에 남아있다)
+                    playTrack(firstNewIndex);
+                } else {
+                    // 이미 목록에 있는 곡이면 그 곡으로 이동만 한다
+                    playTrack(playlist.findIndex(t => t.id === incoming[0].id));
+                }
+            } catch (error) {
+                alert(`로드 실패: ${error.message}`);
+            } finally {
+                isLoading = false;
+                updateLoadingState();
+            }
+        }
+
+        async function playTrack(index) {
+            if (index < 0 || index >= playlist.length) return;
+
+            currentTrackIndex = index;
+            currentTrack = playlist[index];
+            isLoading = true;
+            updateLoadingState();
+
+            try {
+                const result = await apiCall('/api/prepare', 'POST', { id: currentTrack.id });
+
+                currentDuration = result.duration || 0;
+                // 재생목록에서 받은 제목을 우선한다. 서버는 제목을 모를 때
+                // 영상 id를 그대로 돌려주는 경우가 있어서(조회 호출을 건너뛰므로)
+                // result.title을 먼저 쓰면 화면에 id가 그대로 뜬다.
+                document.getElementById('trackTitle').textContent =
+                    currentTrack.title || result.title || '';
+                document.getElementById('trackArtist').textContent = currentTrack.artist || '';
+
+                audioEl.src = `/api/audio/${currentTrack.id}`;
+                audioEl.currentTime = 0;
+
+                const playPromise = audioEl.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(err => {
+                        console.log('Autoplay blocked:', err);
+                    });
+                }
+
+                renderPlaylist();
+                updateBackground(currentTrack.id);
+                updateAlbumCover(currentTrack.id);
+                prefetchNeighbours();
+            } catch (error) {
+                alert(`트랙 로드 실패: ${error.message}`);
+            } finally {
+                isLoading = false;
+                updateLoadingState();
+            }
+        }
+
+        function togglePlayPause() {
+            if (!currentTrack) return;
+            if (isPlaying) {
+                audioEl.pause();
+            } else {
+                audioEl.play().catch(err => {
+                    console.log('Play failed:', err);
+                });
+            }
+        }
+
+        function nextTrack() {
+            if (playlist.length === 0) return;
+            const nextIndex = (currentTrackIndex + 1) % playlist.length;
+            playTrack(nextIndex);
+        }
+
+        function prevTrack() {
+            if (playlist.length === 0) return;
+            const prevIndex = (currentTrackIndex - 1 + playlist.length) % playlist.length;
+            playTrack(prevIndex);
+        }
+
+        async function syncWithServer() {
+            if (!currentTrack) return;
+            try {
+                await apiCall('/api/sync', 'POST', {
+                    id: currentTrack.id,
+                    time: Math.floor(audioEl.currentTime),
+                    playing: isPlaying
+                });
+            } catch (error) {
+                // Silent fail
+            }
+        }
+
+        async function ledTest() {
+            try {
+                const btn = document.getElementById('modeLedTest');
+                btn.classList.add('active');
+                await apiCall('/api/ledtest', 'POST', {});
+                setTimeout(() => btn.classList.remove('active'), 3000);
+            } catch (error) {
+                console.error('LED test failed:', error);
+            }
+        }
+
+        // ===== Background & Colors =====
+        async function updateBackground(trackId) {
+            try {
+                const canvasEl = document.createElement('canvas');
+                canvasEl.width = 100;
+                canvasEl.height = 100;
+                const ctxEl = canvasEl.getContext('2d');
+
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.src = `/api/thumb/${trackId}`;
+
+                img.onload = () => {
+                    ctxEl.drawImage(img, 0, 0, 100, 100);
+                    const imageData = ctxEl.getImageData(0, 0, 100, 100);
+                    const dominantColors = extractDominantColors(imageData.data);
+                    applyBackgroundGradient(dominantColors);
+                };
+
+                img.onerror = () => {
+                    console.warn('Thumbnail load failed');
+                };
+            } catch (error) {
+                console.error('Background update error:', error);
+            }
+        }
+
+        function extractDominantColors(pixels) {
+            const colorMap = {};
+
+            for (let i = 0; i < pixels.length; i += 4) {
+                const r = Math.round(pixels[i] / 32) * 32;
+                const g = Math.round(pixels[i + 1] / 32) * 32;
+                const b = Math.round(pixels[i + 2] / 32) * 32;
+
+                const brightness = (r + g + b) / 3;
+                if (brightness < 30 || brightness > 225) continue;
+
+                const saturation = Math.max(r, g, b) - Math.min(r, g, b);
+                if (saturation < 30) continue;
+
+                const key = `${r},${g},${b}`;
+                colorMap[key] = (colorMap[key] || 0) + 1;
+            }
+
+            const ranked = Object.entries(colorMap)
+                .sort(([, countA], [, countB]) => countB - countA)
+                .map(([color]) => {
+                    const [r, g, b] = color.split(',').map(Number);
+                    return { r, g, b, h: rgbToHsl(r, g, b).h };
+                });
+
+            const picked = [];
+            for (const c of ranked) {
+                const clash = picked.some(p => {
+                    const d = Math.abs(p.h - c.h);
+                    return Math.min(d, 360 - d) < 30;
+                });
+                if (!clash) picked.push(c);
+                if (picked.length === 3) break;
+            }
+
+            while (picked.length < 3 && ranked.length > 0) {
+                picked.push(ranked[picked.length % ranked.length]);
+            }
+
+            return picked;
+        }
+
+        function rgbToHsl(r, g, b) {
+            r /= 255;
+            g /= 255;
+            b /= 255;
+            const max = Math.max(r, g, b);
+            const min = Math.min(r, g, b);
+            let h = 0, s = 0;
+            const l = (max + min) / 2;
+
+            if (max !== min) {
+                const d = max - min;
+                s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+                switch (max) {
+                    case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                    case g: h = (b - r) / d + 2; break;
+                    case b: h = (r - g) / d + 4; break;
+                }
+                h /= 6;
+            }
+
+            return { h: h * 360, s, l };
+        }
+
+        function hslToRgb(h, s, l) {
+            h = h / 360;
+            let r, g, b;
+
+            const hue2rgb = (p, q, t) => {
+                if (t < 0) t += 1;
+                if (t > 1) t -= 1;
+                if (t < 1/6) return p + (q - p) * 6 * t;
+                if (t < 1/2) return q;
+                if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+                return p;
+            };
+
+            if (s === 0) {
+                r = g = b = l;
+            } else {
+                const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+                const p = 2 * l - q;
+                r = hue2rgb(p, q, h + 1/3);
+                g = hue2rgb(p, q, h);
+                b = hue2rgb(p, q, h - 1/3);
+            }
+
+            return {
+                r: Math.round(r * 255),
+                g: Math.round(g * 255),
+                b: Math.round(b * 255)
+            };
+        }
+
+        function toPastelColor(r, g, b) {
+            const hsl = rgbToHsl(r, g, b);
+            // 채도 0.35 / 명도 0.88까지 눌러버리면 어떤 앨범이든 거의 흰색이
+            // 되어 곡을 바꿔도 배경이 그대로인 것처럼 보인다. 파스텔은 유지하되
+            // 색이 읽힐 만큼은 남긴다.
+            hsl.s = Math.max(0.55, Math.min(0.80, hsl.s));
+            hsl.l = Math.max(0.68, Math.min(0.78, hsl.l));
+            return hslToRgb(hsl.h, hsl.s, hsl.l);
+        }
+
+        function applyBackgroundGradient(colors) {
+            const gradient = document.getElementById('bgGradient');
+            const blobs = gradient.querySelectorAll('.gradient-blob');
+
+            if (colors.length === 0) {
+                colors = currentColors;
+            }
+
+            const pastelColors = colors.slice(0, 3).map(c => toPastelColor(c.r, c.g, c.b));
+
+            if (pastelColors.length > 0) {
+                const primary = pastelColors[0];
+                const primaryHsl = rgbToHsl(primary.r, primary.g, primary.b);
+                primaryHsl.l = Math.max(0.90, Math.min(0.95, primaryHsl.l));
+                primaryHsl.s = Math.max(0.45, Math.min(0.70, primaryHsl.s));
+                const lightBg = hslToRgb(primaryHsl.h, primaryHsl.s, primaryHsl.l);
+                document.body.style.background = `rgb(${lightBg.r}, ${lightBg.g}, ${lightBg.b})`;
+            }
+
+            pastelColors.forEach((color, index) => {
+                if (blobs[index]) {
+                    blobs[index].style.background = `radial-gradient(circle, rgba(${color.r}, ${color.g}, ${color.b}, 0.5), transparent 70%)`;
+                }
+            });
+
+            currentColors = pastelColors;
+        }
+
+        // ===== Album Cover =====
+        function updateAlbumCover(trackId) {
+            const img = document.getElementById('albumCoverImg');
+            const labelImg = document.getElementById('vinylLabelImg');
+            img.crossOrigin = 'anonymous';
+            img.src = `/api/thumb/${trackId}`;
+            labelImg.crossOrigin = 'anonymous';
+            labelImg.src = `/api/thumb/${trackId}`;
+            img.onload = () => document.getElementById('albumCover').classList.remove('placeholder');
+        }
+
+        // ===== Vinyl Animation =====
+        function updateVinylAnimation() {
+            const disc = document.getElementById('vinylDisc');
+            if (isPlaying && !isScrubbing) {
+                disc.style.animationPlayState = 'running';
+            } else {
+                disc.style.animationPlayState = 'paused';
+            }
+        }
+
+        // ===== Play/Pause Button =====
+        function updatePlayPauseButton() {
+            const playIcon = document.getElementById('playIcon');
+            const pauseIcon = document.getElementById('pauseIcon');
+            if (isPlaying) {
+                playIcon.style.display = 'none';
+                pauseIcon.style.display = 'block';
+            } else {
+                playIcon.style.display = 'block';
+                pauseIcon.style.display = 'none';
+            }
+        }
+
+        // ===== Progress Bar =====
+        const progressBar = document.getElementById('progressBar');
+        progressBar.addEventListener('click', (e) => {
+            if (!currentTrack) return;
+            const rect = progressBar.getBoundingClientRect();
+            const frac = (e.clientX - rect.left) / rect.width;
+            const newTime = Math.max(0, Math.min(currentDuration, frac * currentDuration));
+            audioEl.currentTime = newTime;
+            syncWithServer();
+        });
+
+        // ===== Vinyl Scrubbing =====
+        const disc = document.getElementById('vinylDisc');
+
+        disc.addEventListener('pointerdown', (e) => {
+            if (!currentTrack) return;
+
+            isScrubbing = true;
+            scrubStartY = e.clientY;
+            scrubStartTime = audioEl.currentTime;
+            scrubLatestY = e.clientY;
+            vinylBaseAngle = parseFloat(disc.style.transform?.match(/[\d.-]+/) || 0) || 0;
+
+            disc.setPointerCapture(e.pointerId);
+            disc.style.animation = 'none';
+            disc.style.cursor = 'grabbing';
+
+            e.preventDefault();
+        });
+
+        disc.addEventListener('pointermove', (e) => {
+            if (!isScrubbing) return;
+            scrubLatestY = e.clientY;
+        });
+
+        disc.addEventListener('pointerup', (e) => {
+            if (!isScrubbing) return;
+
+            isScrubbing = false;
+            disc.releasePointerCapture(e.pointerId);
+            disc.style.cursor = 'grab';
+
+            const dy = scrubStartY - scrubLatestY;
+            const deltaTime = dy * SCRUB_SEC_PER_PX;
+            const target = Math.max(0, Math.min(currentDuration, scrubStartTime + deltaTime));
+            audioEl.currentTime = target;
+            syncWithServer();
+
+            // Resume spin from current angle
+            const angle = vinylBaseAngle + (target - scrubStartTime) * 90;
+            disc.style.transform = '';
+            disc.style.animation = 'none';
+            void disc.offsetWidth; // reflow
+            disc.style.animation = 'spin 4s linear infinite';
+            disc.style.animationDelay = '-' + ((angle % 360) / 360 * 4) + 's';
+            disc.style.animationPlayState = isPlaying ? 'running' : 'paused';
+        });
+
+        disc.addEventListener('pointercancel', (e) => {
+            if (!isScrubbing) return;
+            isScrubbing = false;
+            disc.releasePointerCapture(e.pointerId);
+            disc.style.cursor = 'grab';
+            disc.style.animation = 'spin 4s linear infinite';
+            disc.style.animationPlayState = isPlaying ? 'running' : 'paused';
+        });
+
+        // ===== Wave Visualization =====
+        function initCanvas() {
+            canvas = document.getElementById('waveCanvas');
+            ctx = canvas.getContext('2d');
+            devicePixelRatio = window.devicePixelRatio || 1;
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+        }
+
+        function resizeCanvas() {
+            const rect = canvas.getBoundingClientRect();
+            canvasWidth = rect.width;
+            canvasHeight = rect.height;
+            canvas.width = canvasWidth * devicePixelRatio;
+            canvas.height = canvasHeight * devicePixelRatio;
+            ctx.scale(devicePixelRatio, devicePixelRatio);
+        }
+
+        function drawWave() {
+            const TAU = Math.PI * 2;
+            const centerY = canvasHeight / 2;
+            const numBars = 128;
+
+            const meanLevel = (levels[0] + levels[1] + levels[2] + levels[3]) / (4 * 255);
+            const maxH = canvasHeight * 0.45 * (0.4 + 0.6 * meanLevel);
+            const minH = 1;
+
+            const barWidth = canvasWidth / (numBars * 1.5);
+            const barGap = barWidth * 0.5;
+            const totalBarArea = barWidth + barGap;
+
+            const gradient = ctx.createLinearGradient(0, 0, canvasWidth, 0);
+            const c1 = currentColors[0];
+            const c2 = currentColors[1];
+            const c3 = currentColors[2];
+            gradient.addColorStop(0, `rgb(${c1.r}, ${c1.g}, ${c1.b})`);
+            gradient.addColorStop(0.5, `rgb(${c2.r}, ${c2.g}, ${c2.b})`);
+            gradient.addColorStop(1, `rgb(${c3.r}, ${c3.g}, ${c3.b})`);
+
+            for (let i = 0; i < numBars; i++) {
+                const spec = (spectrumSmoothData[i] || 0) / 255;
+
+                const h = Math.max(minH, spec * maxH);
+
+                const x = (totalBarArea * i) + totalBarArea / 2;
+                const y = centerY;
+                const halfH = h / 2;
+
+                ctx.fillStyle = gradient;
+                ctx.fillRect(x - barWidth / 2, y - halfH, barWidth, h);
+            }
+        }
+
+        // ===== LED Indicators =====
+        function updateLEDIndicators() {
+            for (let i = 0; i < 4; i++) {
+                const level = Math.min(255, Math.max(0, levels[i] || 0));
+                const intensity = level / 255;
+                const dot = document.getElementById(`ledDot${i}`);
+                const rose = '#e8547f';
+
+                dot.style.background = rose;
+                dot.style.opacity = intensity * 0.8 + 0.2;
+                dot.style.boxShadow = `0 0 ${10 * intensity}px rgba(232, 84, 127, ${intensity * 0.6})`;
+            }
+        }
+
+        // ===== Level Polling =====
+        async function pollLevels() {
+            try {
+                const result = await apiCall('/api/levels', 'GET');
+                levels = result.levels || [0, 0, 0, 0];
+                const spectrum = result.spectrum || [];
+                const isConnected = result.serial || false;
+
+                if (spectrum.length === 128) {
+                    spectrumData = spectrum.slice();
+                    for (let i = 0; i < 128; i++) {
+                        spectrumSmoothData[i] = (spectrumSmoothData[i] || 0) + (spectrumData[i] - (spectrumSmoothData[i] || 0)) * 0.35;
+                    }
+                }
+
+                updateLEDIndicators();
+                updateStatusChip(isConnected);
+                (result.events || []).forEach(handleBoardEvent);
+                if (result.alert) showAlertToast(result.alert);
+            } catch (error) {
+                console.warn('Level poll error:', error);
+            }
+        }
+
+        // 지금 곡이 재생되는 동안 앞뒤 곡을 미리 받아둔다.
+        // 준비 시간의 대부분이 다운로드라, 미리 받아두면 곡 넘김이 즉시 끝난다.
+        function prefetchNeighbours() {
+            if (playlist.length < 2) return;
+            const n = playlist.length;
+            [currentTrackIndex + 1, currentTrackIndex - 1].forEach(i => {
+                const t = playlist[(i + n) % n];
+                if (t && t.id !== currentTrack?.id) {
+                    apiCall('/api/prefetch', 'POST', { id: t.id }).catch(() => {});
+                }
+            });
+        }
+
+        // 보드 버튼에서 올라온 이벤트 처리
+        // 1번 재생/일시정지, 2번 한 번 다음곡·두 번 이전곡, 3번 음량+, 4번 음량-
+        function handleBoardEvent(ev) {
+            if (ev === 'toggle') togglePlayPause();
+            else if (ev === 'next') nextTrack();
+            else if (ev === 'prev') prevTrack();
+            else if (ev === 'vol_up' || ev === 'vol_down') {
+                const step = ev === 'vol_up' ? 0.1 : -0.1;
+                setVolume(Math.max(0, Math.min(1, audioEl.volume + step)));
+                showVolumeToast(audioEl.volume);
+            }
+        }
+
+        // 음량을 한 곳에서만 바꾼다. 슬라이더와 보드 버튼이 항상 같은 값을 본다.
+        function setVolume(v) {
+            audioEl.volume = v;
+            const s = document.getElementById('volumeSlider');
+            const t = document.getElementById('volumeValue');
+            if (s) s.value = Math.round(v * 100);
+            if (t) t.textContent = Math.round(v * 100) + '%';
+        }
+
+        document.getElementById('volumeSlider').addEventListener('input', (e) => {
+            setVolume(e.target.value / 100);
+        });
+
+        let volumeToastTimer = null;
+        function showVolumeToast(v) {
+            const el = document.getElementById('volumeToast');
+            el.textContent = `음량 ${Math.round(v * 100)}%`;
+            el.classList.add('show');
+            clearTimeout(volumeToastTimer);
+            volumeToastTimer = setTimeout(() => el.classList.remove('show'), 1200);
+        }
+
+        function updateStatusChip(isConnected) {
+            document.getElementById('boardStatus').textContent = isConnected ? '보드 ON' : '보드 OFF';
+            document.getElementById('boardDot').classList.toggle('on', !!isConnected);
+        }
+
+        // ===== UI Updates =====
+        function updateLoadingState() {
+            const submitBtn = document.getElementById('submitBtn');
+            const trackTitle = document.getElementById('trackTitle');
+
+            if (isLoading) {
+                submitBtn.disabled = true;
+                if (!trackTitle.innerHTML.includes('spinner')) {
+                    trackTitle.innerHTML = '<span class="loading-indicator"><div class="spinner"></div>트랙 준비 중...</span>';
+                }
+            } else {
+                submitBtn.disabled = false;
+                if (trackTitle.innerHTML.includes('spinner')) {
+                    trackTitle.textContent = currentTrack?.title || '재생 준비 중...';
+                }
+            }
+        }
+
+        function renderPlaylist() {
+            const playlistEl = document.getElementById('playlist');
+            const section = document.getElementById('playlistSection');
+            const statusLine = document.getElementById('playlistStatus');
+
+            playlistEl.innerHTML = '';
+
+            // 분기 밖에서 먼저 확정한다. 예전에는 곡이 2개 이상일 때만 갱신돼서
+            // 1곡만 넣으면 "재생목록 준비 중"에 계속 머물렀다.
+            statusLine.textContent = playlist.length === 0
+                ? '재생목록 비어있음'
+                : `재생목록 ${playlist.length}곡 · 지금 ${currentTrackIndex + 1}번째`;
+
+            if (playlist.length > 1) {
+                section.classList.add('active');
+
+                playlist.forEach((track, index) => {
+                    const li = document.createElement('li');
+                    li.className = 'playlist-item';
+                    if (index === currentTrackIndex) {
+                        li.classList.add('active');
+                    }
+                    li.innerHTML = `
+                        <span class="playlist-item-number">${index + 1}</span>
+                        <span class="playlist-item-title">${escapeHtml(track.title)}</span>
+                    `;
+                    li.onclick = () => playTrack(index);
+                    playlistEl.appendChild(li);
+                });
+            } else {
+                section.classList.remove('active');
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ===== Time =====
+        function formatTime(seconds) {
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            return `${m}:${s.toString().padStart(2, '0')}`;
+        }
+
+        function updateTrackTime() {
+            if (!currentTrack) return;
+            document.getElementById('currentTime').textContent = formatTime(audioEl.currentTime);
+            document.getElementById('totalTime').textContent = formatTime(currentDuration);
+
+            const frac = currentDuration > 0 ? audioEl.currentTime / currentDuration : 0;
+            document.getElementById('progressFill').style.width = (frac * 100) + '%';
+            document.getElementById('progressHandle').style.left = (frac * 100) + '%';
+        }
+
+        // ===== Animation Loop =====
+        let lastLevelPoll = 0;
+        let levelPolling = false;
+        let rafTicks = 0;
+        let lastRafTicks = -1;
+
+        function animationLoop() {
+            requestAnimationFrame(() => {
+                animationLoop();
+
+                try {
+                    updateTrackTime();
+
+                    // Draw waveform
+                    ctx.fillStyle = '#faf7f4';
+                    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+                    drawWave();
+
+                    // Handle vinyl drag in RAF
+                    if (isScrubbing && currentTrack) {
+                        const dy = scrubStartY - scrubLatestY;
+                        const deltaTime = dy * SCRUB_SEC_PER_PX;
+                        const target = Math.max(0, Math.min(currentDuration, scrubStartTime + deltaTime));
+
+                        // Update angle each frame
+                        const angle = vinylBaseAngle + (target - scrubStartTime) * 90;
+                        disc.style.transform = `rotate(${angle}deg)`;
+
+                        // Live scrub with throttling
+                        const now = Date.now();
+                        if (now - lastScrubSync >= SCRUB_THROTTLE_MS) {
+                            audioEl.currentTime = target;
+                            syncWithServer();
+                            lastScrubSync = now;
+                        }
+                    }
+
+                    // Poll levels
+                    const now = Date.now();
+                    rafTicks++;
+                } catch (error) {
+                    console.warn('Animation loop error:', error);
+                }
+            });
+        }
+
+        // 레벨 폴링은 rAF가 아니라 타이머로 돌린다.
+        // 창이 가려지거나 백그라운드로 가면 브라우저가 rAF를 멈춰버려서,
+        // 폴링을 rAF에 얹어두면 '보드 연결됨' 같은 상태 표시가 통째로 굳는다.
+        setInterval(() => {
+            if (levelPolling) return;
+            levelPolling = true;
+            pollLevels().finally(() => {
+                levelPolling = false;
+                lastLevelPoll = Date.now();
+            });
+        }, 33);
+
+        // rAF가 멈춰 있으면 되살린다
+        setInterval(() => {
+            if (document.hidden) return;
+            if (rafTicks === lastRafTicks) animationLoop();
+            lastRafTicks = rafTicks;
+        }, 2000);
+
+        // ===== Button Events =====
+        document.getElementById('playPauseBtn').addEventListener('click', togglePlayPause);
+        document.getElementById('nextBtn').addEventListener('click', nextTrack);
+        document.getElementById('prevBtn').addEventListener('click', prevTrack);
+
+        // ===== Sync Timer =====
+        setInterval(() => {
+            if (currentTrack && isPlaying) {
+                syncWithServer();
+            }
+        }, 1000);
+
+        // 음량 표시용 요소를 동적으로 붙인다
+        (function () {
+            const t = document.createElement('div');
+            t.className = 'volume-toast';
+            t.id = 'volumeToast';
+            document.body.appendChild(t);
+        })();
+
+        // 알림 표시용 요소
+        (function () {
+            const t = document.createElement('div');
+            t.className = 'volume-toast alert-toast';
+            t.id = 'alertToast';
+            document.body.appendChild(t);
+        })();
+
+        let alertToastTimer = null;
+
+        // 서버가 카톡 알림을 감지하면 /api/levels에 실려 한 번만 내려온다
+        function showAlertToast(alert) {
+            const el = document.getElementById('alertToast');
+            if (!el) return;
+
+            const sender = alert.sender || '알림';
+            const body = alert.body || '';
+            el.innerHTML =
+                `<span class="alert-sender">💬 ${escapeHtml(sender)}</span>` +
+                (body ? `<span class="alert-body">${escapeHtml(body)}</span>` : '');
+            el.classList.add('show');
+
+            // 연달아 오면 타이머를 새로 잡는다. LED 알림 시간과 맞춰 6초.
+            clearTimeout(alertToastTimer);
+            alertToastTimer = setTimeout(() => el.classList.remove('show'), 6000);
+        }
+
+        // ===== Init =====
+        document.addEventListener('DOMContentLoaded', () => {
+            initCanvas();
+            animationLoop();
+            updateStatusChip(false);
+            applyBackgroundGradient([]);
+            updatePlayPauseButton();
+        });
+    </script>
+</body>
+</html>

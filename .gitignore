@@ -1,0 +1,5 @@
+host/.venv/
+host/.cache/
+host/bin/yt-dlp
+popup/build/
+*.app/
