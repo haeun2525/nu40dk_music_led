@@ -191,7 +191,9 @@ WATCH_RULES = [
 
 ```bash
 cd ~/Documents/Arduino/nu40dk_music_led/popup
-./build.sh run      # 빌드하고 실행. 이후엔 build/NU40DK Popup.app 을 열면 된다
+./build.sh run          # 빌드하고 실행. 이후엔 build/NU40DK Popup.app 을 열면 된다
+./build.sh autostart    # 로그인할 때 자동으로 뜨게 등록
+./build.sh autostop     # 해제
 ```
 
 - **이동**: 카드 아무 데나 잡고 끈다
@@ -230,6 +232,10 @@ Swift로 그리면 색·타이포를 고칠 때마다 다시 빌드해야 한다
 - **NSPanel + `.nonactivatingPanel`이라야** 위젯을 만져도 쓰던 앱의 포커스를 뺏지 않는다.
   일반 창으로 만들면 드래그할 때마다 앞 앱이 바뀐다.
 - **Dock 아이콘이 없다**(`LSUIElement`). 종료는 우클릭 메뉴로만 한다.
+- **자동 실행은 LaunchAgent로 건다**(`~/Library/LaunchAgents/com.nucode.nu40dk.popup.plist`).
+  `KeepAlive`를 `true`로 두면 우클릭 종료가 무의미해진다. 종료하는 즉시 다시 뜬다.
+  `SuccessfulExit=false`로 두어야 **정상 종료는 존중하고 크래시에만 되살린다.**
+  대신 `pkill`이나 강제 종료는 비정상 종료라 다시 뜬다. 완전히 끄려면 `./build.sh autostop`.
 - 아티스트는 유튜브 제목의 `Artist - Title` 표기에서 뽑는다. 업로더 이름은 레이블
   채널인 경우가 많아 오히려 더 틀린다. 나뉘지 않으면 아티스트를 비우고 제목만 띄운다.
 

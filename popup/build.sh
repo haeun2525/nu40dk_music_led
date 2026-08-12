@@ -1,8 +1,10 @@
 #!/bin/bash
 # 팝업 위젯을 .app 번들로 빌드한다.
 #
-#   ./build.sh          빌드
-#   ./build.sh run      빌드 후 실행 (기존 인스턴스는 종료)
+#   ./build.sh              빌드
+#   ./build.sh run          빌드 후 실행 (기존 인스턴스는 종료)
+#   ./build.sh autostart    로그인할 때 자동 실행 등록
+#   ./build.sh autostop     자동 실행 해제
 #
 # Xcode는 필요 없다. 커맨드라인 도구의 swiftc만 쓴다.
 
@@ -11,6 +13,53 @@ cd "$(dirname "$0")"
 
 APP="build/NU40DK Popup.app"
 NAME="NU40DK Popup"
+LABEL="com.nucode.nu40dk.popup"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+
+# ---------------------------------------------------------------------------
+# 로그인 항목 등록/해제. 빌드와 무관하므로 먼저 처리하고 빠진다.
+# ---------------------------------------------------------------------------
+if [ "${1:-}" = "autostop" ]; then
+    launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+    rm -f "$PLIST"
+    echo "자동 실행을 해제했습니다. (팝업 자체는 그대로 떠 있습니다)"
+    exit 0
+fi
+
+if [ "${1:-}" = "autostart" ]; then
+    BIN="$(pwd)/$APP/Contents/MacOS/NU40DKPopup"
+    if [ ! -x "$BIN" ]; then
+        echo "먼저 ./build.sh 로 빌드해 주세요." >&2
+        exit 1
+    fi
+
+    mkdir -p "$(dirname "$PLIST")"
+    # KeepAlive를 그냥 true로 두면 우클릭 > 팝업 종료가 무의미해진다.
+    # 곧바로 다시 뜨기 때문이다. SuccessfulExit=false 면 정상 종료는 존중하고
+    # 비정상 종료(크래시)에만 다시 띄운다.
+    cat > "$PLIST" <<PLIST_EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>            <string>${LABEL}</string>
+    <key>ProgramArguments</key> <array><string>${BIN}</string></array>
+    <key>RunAtLoad</key>        <true/>
+    <key>KeepAlive</key>        <dict><key>SuccessfulExit</key><false/></dict>
+    <key>ProcessType</key>      <string>Interactive</string>
+    <key>LimitLoadToSessionType</key><string>Aqua</string>
+</dict>
+</plist>
+PLIST_EOF
+
+    # 이미 떠 있는 인스턴스가 있으면 두 개가 된다
+    pkill -f "NU40DKPopup" 2>/dev/null || true
+    launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+    launchctl bootstrap "gui/$(id -u)" "$PLIST"
+    echo "등록했습니다. 이제 로그인하면 팝업이 자동으로 뜹니다."
+    echo "해제: ./build.sh autostop"
+    exit 0
+fi
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
