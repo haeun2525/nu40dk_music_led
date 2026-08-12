@@ -56,6 +56,10 @@ PORT = 8765
 WEB_DIR = Path(__file__).resolve().parent / "web"
 VENV_BIN = Path(__file__).resolve().parent / ".venv" / "bin"
 YTDLP = Path(__file__).resolve().parent / "bin" / "yt-dlp"
+# 제목을 메모리에만 두면 서버를 껐다 켤 때마다 잃는다. 그러면 곡 이름 자리에
+# 영상 id가 뜬다. 오디오는 .cache에 남아 재분석도 안 하니 스스로 회복되지도
+# 않는다. 파일로 남겨서 재시작을 넘긴다.
+TITLES_FILE = Path(__file__).resolve().parent / ".cache" / "titles.json"
 PLAYLIST_LIMIT = 50   # 자동 믹스/라디오는 사실상 무한이라 앞에서 끊는다
 
 # 알림 감시 규칙: 여기 걸리는 알림이 오면 LED로 알린다.
@@ -109,6 +113,74 @@ spectrum_cache: dict[str, np.ndarray] = {}   # 화면 파형용 32밴드
 playlist_titles: dict[str, str] = {}         # 목록에서 얻은 제목 (조회 호출 절약)
 prefetching: set[str] = set()                # 미리 받는 중인 영상 id
 levels_meta: dict[str, dict[str, Any]] = {}  # {video_id -> {"title": str, "duration": float}}
+titles_lock = threading.Lock()
+
+
+def load_titles() -> None:
+    """디스크에 남겨둔 제목을 메모리로 올린다. 서버 시작 때 한 번."""
+    try:
+        data = json.loads(TITLES_FILE.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            playlist_titles.update({k: v for k, v in data.items()
+                                    if isinstance(v, str) and v and v != k})
+    except Exception:
+        pass   # 파일이 없거나 깨졌으면 빈 상태로 시작한다
+
+
+def remember_title(vid: str, title: str) -> None:
+    """제목을 알게 되면 메모리와 디스크에 같이 남긴다."""
+    if not vid or not title or title == vid:
+        return
+    with titles_lock:
+        if playlist_titles.get(vid) == title:
+            return
+        playlist_titles[vid] = title
+        try:
+            TITLES_FILE.parent.mkdir(exist_ok=True)
+            TITLES_FILE.write_text(
+                json.dumps(playlist_titles, ensure_ascii=False, indent=0),
+                encoding="utf-8")
+        except Exception:
+            pass   # 저장 실패로 재생까지 막지는 않는다
+
+
+_title_lookups: set[str] = set()
+
+
+def _kick_title_lookup(vid: str) -> None:
+    """제목 조회를 백그라운드로 돌린다. 곡당 한 번만."""
+    with titles_lock:
+        if vid in _title_lookups:
+            return
+        _title_lookups.add(vid)
+
+    def _run() -> None:
+        title = resolve_title(vid)
+        if title and levels_meta.get(vid):
+            levels_meta[vid]["title"] = title
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+def resolve_title(vid: str) -> str:
+    """제목을 모르는 곡의 이름을 yt-dlp로 물어본다. 실패하면 빈 문자열."""
+    if not vid:
+        return ""
+    known = playlist_titles.get(vid)
+    if known:
+        return known
+    try:
+        r = subprocess.run(
+            [str(YTDLP), "--no-warnings", "--no-playlist", "--skip-download",
+             "--print", "%(title)s", f"https://www.youtube.com/watch?v={vid}"],
+            capture_output=True, text=True, timeout=45,
+        )
+        title = r.stdout.strip().split("\n")[0] if r.returncode == 0 else ""
+    except Exception:
+        title = ""
+    remember_title(vid, title)
+    return title
+
 
 # 현재 표시할 LED 레벨과 시리얼 연결 상태
 current_levels: np.ndarray = np.zeros(4, dtype=np.uint8)
@@ -205,7 +277,7 @@ def resolve_playlist(url: str) -> list[dict[str, str]]:
                 continue
             vid, title = parts
             thumb = f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"
-            playlist_titles[vid] = title
+            remember_title(vid, title)
             tracks.append({"id": vid, "title": title, "thumb": thumb})
         if tracks:
             return tracks
@@ -235,7 +307,7 @@ def _single_video_from_url(url: str) -> list[dict[str, Any]] | None:
             capture_output=True, text=True, timeout=45,
         )
         title = r.stdout.strip().split("\n")[0] if r.returncode == 0 else vid
-        playlist_titles[vid] = title      # 이 경로로 들어와도 제목을 기억해둔다
+        remember_title(vid, title)        # 이 경로로 들어와도 제목을 기억해둔다
         return [{
             "id": vid,
             "title": title or vid,
@@ -289,9 +361,16 @@ def analyze_video(vid: str) -> dict[str, Any]:
                 # 브라우저가 재생할 수 있는 형태로 변환해서 넘긴다
                 "path": str(ensure_playable(audio_path)),
             }
-            # 제목을 못 구해 id가 들어간 경우, 목록에 아는 제목이 있으면 그걸 쓴다
-            if title == vid and playlist_titles.get(vid):
-                levels_meta[vid]["title"] = playlist_titles[vid]
+            # 제목을 못 구해 id가 들어간 경우. 아는 제목이 있으면 그걸 쓰고,
+            # 그것도 없으면 유튜브에 직접 물어본다. 여기서 포기하면 곡 이름
+            # 자리에 영상 id가 그대로 박힌 채 캐시에 굳는다.
+            if title == vid:
+                better = resolve_title(vid)
+                if better:
+                    title = better
+                    levels_meta[vid]["title"] = better
+            else:
+                remember_title(vid, title)
 
             return {
                 "ready": True,
@@ -386,7 +465,11 @@ def serial_loop():
                 port = find_port()
                 if port:
                     try:
-                        ser = serial.Serial(port, 115200, timeout=0)
+                        # write_timeout이 없으면 보드가 USB를 안 비울 때
+                        # ser.write가 영원히 막힌다. 60fps 루프가 통째로 멎어
+                        # LED도 파동도 같이 죽는다. 짧게 끊고 포트를 다시 잡는다.
+                        ser = serial.Serial(port, 115200, timeout=0,
+                                            write_timeout=0.2)
                         serial_connected = True
                     except Exception:
                         ser = None
@@ -444,8 +527,16 @@ def serial_loop():
                 try:
                     ser.write(frame_bytes(current_levels))
                 except Exception:
-                    # 직렬 포트 끊김: 다음 재시도 대기로
-                    ser.close()
+                    # 직렬 포트 끊김(또는 쓰기 타임아웃): 다음 재시도 대기로.
+                    # 밀린 출력 버퍼를 비우지 않으면 close에서 또 막힌다.
+                    try:
+                        ser.reset_output_buffer()
+                    except Exception:
+                        pass
+                    try:
+                        ser.close()
+                    except Exception:
+                        pass
                     ser = None
                     serial_connected = False
 
@@ -576,6 +667,12 @@ class MusicLEDHandler(BaseHTTPRequestHandler):
             raw_title = meta.get("title") or ""
             if not raw_title or raw_title == vid:
                 raw_title = playlist_titles.get(vid or "") or raw_title
+            if vid and raw_title == vid:
+                # 아직도 id뿐이다. 팝업 폴링을 붙잡아둘 수는 없으니 조회는
+                # 뒤로 넘기고, 이번 응답에는 id 대신 빈 제목을 보낸다.
+                # 팝업이 "트랙 준비 중"을 띄우고, 다음 폴링에서 진짜 이름이 온다.
+                _kick_title_lookup(vid)
+                raw_title = ""
             duration = float(meta.get("duration") or 0.0)
             if duration:
                 position = max(0.0, min(position, duration))
@@ -874,6 +971,9 @@ class MusicLEDHandler(BaseHTTPRequestHandler):
 def main():
     """서버를 시작한다."""
     global serial_connected
+
+    # 지난 실행에서 알아낸 곡 제목을 되살린다
+    load_titles()
 
     # 직렬 스트리밍 스레드 시작 (데몬 모드)
     serial_thread = threading.Thread(target=serial_loop, daemon=True)
